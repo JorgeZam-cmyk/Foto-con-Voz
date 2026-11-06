@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Foto con voz</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Segoe UI,Roboto,Arial,sans-serif;background:#f1f4f8;color:#1b2a3a}
+  header{background:#0f4c81;color:#fff;padding:14px 16px;font-size:18px;font-weight:600}
+  main{max-width:560px;margin:0 auto;padding:14px}
+  .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  h2{font-size:14px;margin:0 0 10px;color:#0f4c81;text-transform:uppercase;letter-spacing:.4px}
+  button,.btn{display:block;width:100%;padding:14px;border:0;border-radius:10px;font-size:16px;font-weight:600;
+    color:#fff;background:#0f4c81;text-align:center;cursor:pointer}
+  button.sec{background:#e3ebf4;color:#0f4c81}
+  button.rec{background:#c62828}
+  button:disabled{opacity:.45}
+  input[type=text],textarea{width:100%;padding:10px;border:1px solid #b8c4d2;border-radius:8px;font-size:16px;font-family:inherit}
+  textarea{min-height:130px;resize:vertical}
+  label{font-size:13px;color:#51657a;display:block;margin:8px 0 4px}
+  #prev{width:100%;border-radius:8px;display:none;border:1px solid #d5dde6}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  #msg{font-size:13px;color:#51657a;margin-top:8px;min-height:18px}
+  #fileIn{display:none}
+</style>
+</head>
+<body>
+<header>📷 Foto con voz</header>
+<main>
+
+  <div class="card">
+    <h2>1. Foto</h2>
+    <button id="btnFoto">Tomar foto o elegir de la galería</button>
+    <input id="fileIn" type="file" accept="image/*" capture="environment">
+    <img id="prev" alt="Vista previa">
+  </div>
+
+  <div class="card">
+    <h2>2. Explicación</h2>
+    <label for="titulo">Título o equipo (opcional)</label>
+    <input id="titulo" type="text" placeholder="Ej.: CH Los Quilos – Compuerta Plana 2">
+    <label for="texto">Explicación (puedes editar el texto)</label>
+    <textarea id="texto" placeholder="Pulsa el micrófono y habla, o dicta con el micrófono de tu teclado."></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="btnMic" class="sec">🎤 Hablar</button>
+      <button id="btnBorrar" class="sec">Borrar texto</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Guardar</h2>
+    <button id="btnGen" disabled>Generar imagen</button>
+    <canvas id="cv" style="display:none"></canvas>
+    <img id="res" alt="Resultado" style="width:100%;margin-top:10px;border-radius:8px;display:none;border:1px solid #d5dde6">
+    <div class="row" style="margin-top:10px">
+      <button id="btnDown" class="sec" disabled>Descargar JPG</button>
+      <button id="btnShare" class="sec" disabled>Compartir / OneDrive</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function(){
+  var fileIn=document.getElementById('fileIn'), prev=document.getElementById('prev');
+  var btnFoto=document.getElementById('btnFoto'), btnMic=document.getElementById('btnMic');
+  var btnBorrar=document.getElementById('btnBorrar'), btnGen=document.getElementById('btnGen');
+  var btnDown=document.getElementById('btnDown'), btnShare=document.getElementById('btnShare');
+  var texto=document.getElementById('texto'), titulo=document.getElementById('titulo');
+  var msg=document.getElementById('msg'), cv=document.getElementById('cv'), res=document.getElementById('res');
+  var img=null, blobOut=null, fileName='foto.jpg';
+
+  function setMsg(t){ msg.textContent=t; }
+
+  // ---------- Foto ----------
+  btnFoto.onclick=function(){ fileIn.click(); };
+  fileIn.onchange=function(){
+    var f=fileIn.files[0]; if(!f) return;
+    var url=URL.createObjectURL(f);
+    var im=new Image();
+    im.onload=function(){
+      img=im; prev.src=url; prev.style.display='block';
+      btnGen.disabled=false; blobOut=null; res.style.display='none';
+      btnDown.disabled=true; btnShare.disabled=true;
+    };
+    im.src=url;
+  };
+
+  // ---------- Voz ----------
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition, rec=null, escuchando=false, base='';
+  if(!SR){
+    btnMic.disabled=true;
+    setMsg('Este navegador no permite dictado dentro de la página. Usa el micrófono del teclado del celular en el cuadro de texto.');
+  }
+  btnMic.onclick=function(){
+    if(!SR) return;
+    if(escuchando){ rec.stop(); return; }
+    rec=new SR(); rec.lang='es-CL'; rec.continuous=true; rec.interimResults=true;
+    base=texto.value ? texto.value.replace(/\s+$/,'')+' ' : '';
+    rec.onstart=function(){ escuchando=true; btnMic.textContent='⏹ Detener'; btnMic.className='rec'; setMsg('Escuchando…'); };
+    rec.onresult=function(e){
+      var fin='', par='';
+      for(var i=0;i<e.results.length;i++){
+        if(e.results[i].isFinal) fin+=e.results[i][0].transcript+' ';
+        else par+=e.results[i][0].transcript;
+      }
+      texto.value=base+fin+par;
+    };
+    rec.onerror=function(e){
+      var m={'not-allowed':'Permiso de micrófono denegado. Actívalo en el navegador.',
+             'no-speech':'No se detectó voz.','audio-capture':'No se encontró micrófono.',
+             'network':'El dictado necesita internet.'};
+      setMsg(m[e.error]||('Error de dictado: '+e.error));
+    };
+    rec.onend=function(){
+      escuchando=false; btnMic.textContent='🎤 Hablar'; btnMic.className='sec';
+      if(msg.textContent==='Escuchando…') setMsg('');
+    };
+    try{ rec.start(); }catch(err){ setMsg('No se pudo iniciar el micrófono.'); }
+  };
+  btnBorrar.onclick=function(){ texto.value=''; };
+
+  // ---------- Generar imagen ----------
+  function wrap(ctx, text, maxW){
+    var lines=[];
+    text.split(/\n/).forEach(function(par){
+      var words=par.split(/\s+/), line='';
+      words.forEach(function(w){
+        var t=line?line+' '+w:w;
+        if(ctx.measureText(t).width>maxW && line){ lines.push(line); line=w; }
+        else line=t;
+      });
+      lines.push(line);
+    });
+    return lines;
+  }
+  function pad(n){ return (n<10?'0':'')+n; }
+
+  btnGen.onclick=function(){
+    if(!img) return;
+    var W=Math.min(img.naturalWidth,1600);
+    var H=Math.round(img.naturalHeight*W/img.naturalWidth);
+    var fs=Math.max(18,Math.round(W/36)), m=Math.round(fs*0.9), lh=Math.round(fs*1.35);
+    var d=new Date();
+    var fecha=pad(d.getDate())+'-'+pad(d.getMonth()+1)+'-'+d.getFullYear()+'  '+pad(d.getHours())+':'+pad(d.getMinutes());
+
+    cv.width=W; cv.height=H+10; var ctx=cv.getContext('2d');
+    ctx.font=fs+'px Segoe UI, Roboto, Arial, sans-serif';
+    var cuerpo=wrap(ctx,(texto.value||'').trim()||'(sin explicación)',W-2*m);
+    ctx.font='bold '+fs+'px Segoe UI, Roboto, Arial, sans-serif';
+    var tit=(titulo.value||'').trim();
+    var titLines=tit?wrap(ctx,tit,W-2*m):[];
+
+    var strip=m + titLines.length*lh + (titLines.length?Math.round(lh*0.3):0) + cuerpo.length*lh + Math.round(lh*0.6) + lh + m;
+    cv.height=H+strip;
+    ctx=cv.getContext('2d');
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,cv.height);
+    ctx.drawImage(img,0,0,W,H);
+
+    var y=H+m+fs;
+    ctx.fillStyle='#0f4c81'; ctx.fillRect(0,H,W,Math.max(4,Math.round(fs/6)));
+    if(titLines.length){
+      ctx.fillStyle='#0f4c81'; ctx.font='bold '+fs+'px Segoe UI, Roboto, Arial, sans-serif';
+      titLines.forEach(function(l){ ctx.fillText(l,m,y); y+=lh; });
+      y+=Math.round(lh*0.3);
+    }
+    ctx.fillStyle='#1b2a3a'; ctx.font=fs+'px Segoe UI, Roboto, Arial, sans-serif';
+    cuerpo.forEach(function(l){ ctx.fillText(l,m,y); y+=lh; });
+    y+=Math.round(lh*0.6);
+    ctx.fillStyle='#51657a'; ctx.font=Math.round(fs*0.8)+'px Segoe UI, Roboto, Arial, sans-serif';
+    ctx.fillText(fecha,m,y);
+
+    fileName='Foto_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.jpg';
+    cv.toBlob(function(b){
+      blobOut=b;
+      res.src=URL.createObjectURL(b); res.style.display='block';
+      btnDown.disabled=false; btnShare.disabled=false;
+      setMsg('Imagen lista: '+fileName);
+    },'image/jpeg',0.92);
+  };
+
+  // ---------- Guardar / compartir ----------
+  btnDown.onclick=function(){
+    if(!blobOut) return;
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blobOut); a.download=fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  btnShare.onclick=function(){
+    if(!blobOut) return;
+    var f=new File([blobOut],fileName,{type:'image/jpeg'});
+    if(navigator.canShare && navigator.canShare({files:[f]})){
+      navigator.share({files:[f],title:fileName}).catch(function(){});
+    } else {
+      setMsg('Tu navegador no permite compartir archivos. Usa "Descargar JPG".');
+    }
+  };
+})();
+</script>
+</body>
+</html>
